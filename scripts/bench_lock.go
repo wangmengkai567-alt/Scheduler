@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -96,20 +95,24 @@ func main() {
 	fmt.Printf("配置: %d 并发 goroutine, %d 测试轮数\n", GoroutineCount, TestRounds)
 	fmt.Println()
 
-	// 启动 miniredis
-	mr, err := miniredis.Run()
-	if err != nil {
-		fmt.Printf("❌ 启动 miniredis 失败: %v\n", err)
-		os.Exit(1)
-	}
-	defer mr.Close()
-
+	// 连接真实 Redis
 	client := redis.NewClient(&redis.Options{
-		Addr: mr.Addr(),
+		Addr:     "localhost:6379",
+		Password: "",
+		DB:       0,
 	})
 	defer client.Close()
 
-	ctx := context.Background()
+	// 测试连接
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx).Err(); err != nil {
+		fmt.Printf("❌ 连接 Redis 失败: %v\n", err)
+		fmt.Println("请确保 Redis 已启动: redis-server")
+		os.Exit(1)
+	}
+	fmt.Println("✅ Redis 连接成功")
+	fmt.Println()
 
 	// 统计数据
 	var (
