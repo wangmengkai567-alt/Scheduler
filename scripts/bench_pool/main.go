@@ -19,14 +19,14 @@ import (
 
 // 压测配置
 const (
-	WorkerCount    = 10               // worker 数量
-	QueueSize      = 1000             // 队列大小
-	TestDuration   = 10 * time.Second // 压测时长
-	WarmupDuration = 2 * time.Second  // 预热时长
+	WorkerCount         = 10               // worker 数量
+	QueueSize           = 1000             // 队列大小
+	TestDuration        = 10 * time.Second // 压测时长
+	PoolWarmupDuration  = 2 * time.Second  // 预热时长
 )
 
 // 统计数据
-type Stats struct {
+type PoolStats struct {
 	mu           sync.Mutex
 	latencies    []time.Duration
 	totalTasks   int64
@@ -34,31 +34,31 @@ type Stats struct {
 	failedTasks  int64
 }
 
-func NewStats() *Stats {
-	return &Stats{
+func NewPoolStats() *PoolStats {
+	return &PoolStats{
 		latencies: make([]time.Duration, 0, 100000),
 	}
 }
 
-func (s *Stats) RecordLatency(d time.Duration) {
+func (s *PoolStats) RecordLatency(d time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.latencies = append(s.latencies, d)
 }
 
-func (s *Stats) IncrTotal() {
+func (s *PoolStats) IncrTotal() {
 	atomic.AddInt64(&s.totalTasks, 1)
 }
 
-func (s *Stats) IncrSuccess() {
+func (s *PoolStats) IncrSuccess() {
 	atomic.AddInt64(&s.successTasks, 1)
 }
 
-func (s *Stats) IncrFailed() {
+func (s *PoolStats) IncrFailed() {
 	atomic.AddInt64(&s.failedTasks, 1)
 }
 
-func (s *Stats) Report() {
+func (s *PoolStats) Report() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -119,7 +119,7 @@ func (s *Stats) Report() {
 // 记录延迟的 handler
 // 模拟真实任务处理：包含一定的工作负载
 type benchmarkHandler struct {
-	stats *Stats
+	stats *PoolStats
 }
 
 func (h *benchmarkHandler) Handle(ctx context.Context, taskID uint, payload string) error {
@@ -141,7 +141,7 @@ func (h *benchmarkHandler) Handle(ctx context.Context, taskID uint, payload stri
 // 带时间记录的包装器
 type timedHandler struct {
 	inner  worker.JobHandler
-	stats  *Stats
+	stats  *PoolStats
 }
 
 func (h *timedHandler) Handle(ctx context.Context, taskID uint, payload string) error {
@@ -156,7 +156,7 @@ func main() {
 	fmt.Println("🚀 Worker Pool 性能压测")
 	fmt.Printf("配置: %d workers, queue size %d, duration %v\n", WorkerCount, QueueSize, TestDuration)
 
-	stats := NewStats()
+	stats := NewPoolStats()
 
 	// 创建 handler
 	baseHandler := &benchmarkHandler{stats: stats}
@@ -168,8 +168,8 @@ func main() {
 	defer pool.Stop()
 
 	// 预热
-	fmt.Printf("\n🔥 预热中 (%v)...\n", WarmupDuration)
-	warmupCtx, warmupCancel := context.WithTimeout(context.Background(), WarmupDuration)
+	fmt.Printf("\n🔥 预热中 (%v)...\n", PoolWarmupDuration)
+	warmupCtx, warmupCancel := context.WithTimeout(context.Background(), PoolWarmupDuration)
 	warmupTasks := int64(0)
 	go func() {
 		for warmupCtx.Err() == nil {
@@ -181,12 +181,12 @@ func main() {
 			pool.Submit(job)
 		}
 	}()
-	time.Sleep(WarmupDuration)
+	time.Sleep(PoolWarmupDuration)
 	warmupCancel()
 	fmt.Printf("预热完成，提交 %d 个任务\n", warmupTasks)
 
 	// 重置统计
-	stats = NewStats()
+	stats = NewPoolStats()
 	timedHandler.stats = stats
 	baseHandler.stats = stats
 

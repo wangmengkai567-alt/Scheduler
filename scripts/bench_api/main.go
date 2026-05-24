@@ -17,27 +17,27 @@ import (
 
 // 压测配置
 const (
-	BaseURL        = "http://localhost:8080"
-	Duration       = 10 * time.Second
-	WarmupDuration = 2 * time.Second
-	Concurrency    = 10 // 并发数
+	BaseURL           = "http://localhost:8080"
+	Duration          = 10 * time.Second
+	APIWarmupDuration = 2 * time.Second
+	Concurrency       = 10 // 并发数
 )
 
 // 统计数据
-type Stats struct {
+type APIStats struct {
 	mu        sync.Mutex
 	latencies []time.Duration
 	success   int64
 	failed    int64
 }
 
-func NewStats() *Stats {
-	return &Stats{
+func NewAPIStats() *APIStats {
+	return &APIStats{
 		latencies: make([]time.Duration, 0, 10000),
 	}
 }
 
-func (s *Stats) Record(latency time.Duration, success bool) {
+func (s *APIStats) Record(latency time.Duration, success bool) {
 	s.mu.Lock()
 	s.latencies = append(s.latencies, latency)
 	s.mu.Unlock()
@@ -48,7 +48,7 @@ func (s *Stats) Record(latency time.Duration, success bool) {
 	}
 }
 
-func (s *Stats) Report() {
+func (s *APIStats) Report() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -149,14 +149,14 @@ func main() {
 	fmt.Println()
 
 	// 预热
-	fmt.Printf("🔥 预热中 (%v)...\n", WarmupDuration)
-	warmupStats := NewStats()
+	fmt.Printf("🔥 预热中 (%v)...\n", APIWarmupDuration)
+	warmupStats := NewAPIStats()
 	var wg sync.WaitGroup
 	for i := 0; i < Concurrency; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			timeout := time.After(WarmupDuration)
+			timeout := time.After(APIWarmupDuration)
 			for {
 				select {
 				case <-timeout:
@@ -185,7 +185,7 @@ func main() {
 
 	// 正式压测
 	fmt.Printf("⚡ 压测中 (%v)...\n", Duration)
-	stats := NewStats()
+	stats := NewAPIStats()
 
 	for i := 0; i < Concurrency; i++ {
 		wg.Add(1)
